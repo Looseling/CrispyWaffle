@@ -1,9 +1,9 @@
 ﻿using System;
+using System.Globalization;
 using System.IO;
 using System.Text;
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using CrispyWaffle.Serialization.SystemTextJson;
+using Newtonsoft.Json;
+using CrispyWaffle.Serialization.NewtonsoftJson;
 
 namespace CrispyWaffle.Serialization.Adapters
 {
@@ -11,34 +11,34 @@ namespace CrispyWaffle.Serialization.Adapters
     /// A serializer json.
     /// </summary>
     /// <seealso cref="ISerializerAdapter" />
-    public sealed class JsonSerializerAdapter : BaseSerializerAdapter
+    public sealed class NewtonsoftJsonSerializerAdapter : BaseSerializerAdapter
     {
         /// <summary>
         /// The settings.
         /// </summary>
-        private readonly JsonSerializerOptions _options;
+        private readonly JsonSerializerSettings _settings;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="JsonSerializerAdapter"/> class.
+        /// Initializes a new instance of the <see cref="NewtonsoftJsonSerializerAdapter"/> class.
         /// </summary>
-        public JsonSerializerAdapter()
+        public NewtonsoftJsonSerializerAdapter()
         {
-            _options = new JsonSerializerOptions
+            _settings = new JsonSerializerSettings
             {
-                WriteIndented = true,
-                PropertyNameCaseInsensitive = true,
-                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-                Converters = { new NotNullObserverConverter() }
+                Converters = { new NotNullObserverConverter() },
+                Culture = CultureInfo.GetCultureInfo("pt-br"),
+                MissingMemberHandling = MissingMemberHandling.Error,
+                NullValueHandling = NullValueHandling.Ignore
             };
         }
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="JsonSerializerAdapter"/> class.
+        /// Initializes a new instance of the <see cref="NewtonsoftJsonSerializerAdapter"/> class.
         /// </summary>
-        /// <param name="options">The settings.</param>
-        public JsonSerializerAdapter(JsonSerializerOptions options)
+        /// <param name="settings">The settings.</param>
+        public NewtonsoftJsonSerializerAdapter(JsonSerializerSettings settings)
         {
-            _options = options;
+            _settings = settings;
         }
 
         /// <summary>
@@ -54,18 +54,12 @@ namespace CrispyWaffle.Serialization.Adapters
         public override T DeserializeFromStream<T>(Stream stream, Encoding encoding = null)
             where T : class
         {
-            if (stream == null)
-            {
-                throw new ArgumentNullException(nameof(stream));
-            }
-
             try
             {
-                using (var reader = new StreamReader(stream, encoding ?? Encoding.UTF8))
-                {
-                    var content = reader.ReadToEnd();
-                    return JsonSerializer.Deserialize<T>(content, _options);
-                }
+                return JsonConvert.DeserializeObject<T>(
+                    new StreamReader(stream, encoding ?? Encoding.UTF8).ReadToEnd(),
+                    _settings
+                );
             }
             catch (NotNullObserverException e)
             {
@@ -87,7 +81,7 @@ namespace CrispyWaffle.Serialization.Adapters
         {
             try
             {
-                return JsonSerializer.Deserialize<T>((string)serialized, _options);
+                return JsonConvert.DeserializeObject<T>((string)serialized, _settings);
             }
             catch (NotNullObserverException e)
             {
@@ -104,19 +98,20 @@ namespace CrispyWaffle.Serialization.Adapters
         public override void Serialize<T>(T deserialized, out Stream stream)
             where T : class
         {
+            var jsonSerializer = new JsonSerializer();
             stream = new MemoryStream();
-            if (deserialized != null)
+            var streamTemp = new MemoryStream();
+            var streamWriter = new StreamWriter(streamTemp, Encoding.UTF8);
+
+            using (var jsonWriter = new JsonTextWriter(streamWriter))
             {
-                var writerOptions = new JsonWriterOptions
-                {
-                    Indented = _options.WriteIndented
-                };
+                jsonWriter.Formatting = Formatting.Indented;
 
-                using (var jsonWriter = new Utf8JsonWriter(stream, writerOptions))
-                {
-                    JsonSerializer.Serialize(jsonWriter, deserialized, _options);
-                }
+                jsonSerializer.Serialize(jsonWriter, deserialized);
 
+                streamWriter.Flush();
+                streamTemp.Seek(0, SeekOrigin.Begin);
+                streamTemp.CopyTo(stream);
                 stream.Seek(0, SeekOrigin.Begin);
             }
         }

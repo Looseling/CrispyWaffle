@@ -1,18 +1,18 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.ComponentModel;
 using System.Diagnostics.Contracts;
 using System.IO;
 using System.Text;
+using System.Text.Json;
 using System.Xml;
 using CrispyWaffle.Composition;
 using CrispyWaffle.Extensions;
 using CrispyWaffle.Log;
 using CrispyWaffle.Serialization.Adapters;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 
-namespace CrispyWaffle.Serialization
+
+namespace CrispyWaffle.Serialization.SystemTextJson
 {
     /// <summary>
     /// A serializer extension.
@@ -73,39 +73,37 @@ namespace CrispyWaffle.Serialization
         /// <returns>The result of the conversion.</returns>
         /// <exception cref="InvalidOperationException">Thrown when the requested operation is invalid.</exception>
         [Pure]
-        public static implicit operator JToken(SerializerConverter<T> instance)
+        public static implicit operator JsonElement(SerializerConverter<T> instance)
         {
             if (instance._formatter is not JsonSerializerAdapter)
             {
-                return null;
+                return default(JsonElement);
             }
 
-            TextReader textReader = null;
             try
             {
                 instance._formatter.Serialize(instance._obj, out var stream);
-                textReader = new StreamReader(stream);
-
-                using (JsonReader jsonReader = new JsonTextReader(textReader))
+                stream.Seek(0, SeekOrigin.Begin);
+                using (JsonDocument doc = JsonDocument.Parse(stream))
                 {
-                    textReader = null;
                     var type = instance._obj.GetType();
 
-                    return typeof(IEnumerable).IsAssignableFrom(type)
-                        ? JArray.Load(jsonReader)
-                        : JObject.Load(jsonReader);
+                    if (typeof(IEnumerable).IsAssignableFrom(type))
+                    {
+                        return doc.RootElement.Clone();
+                    }
+                    else
+                    {
+                        return doc.RootElement.Clone();
+                    }
                 }
             }
             catch (InvalidOperationException e)
             {
                 LogConsumer.Handle(e);
             }
-            finally
-            {
-                textReader?.Dispose();
-            }
 
-            return null;
+            return default(JsonElement);
         }
 
         /// <summary>
@@ -155,6 +153,46 @@ namespace CrispyWaffle.Serialization
         /// <param name="instance">The classe.</param>
         /// <returns>The result of the conversion.</returns>
         /// <exception cref="InvalidOperationException">Thrown when the requested operation is invalid.</exception>
+        //[Pure]
+        //public static explicit operator string(SerializerConverter<T> instance)
+        //{
+        //    if (instance._formatter is XmlSerializerAdapter)
+        //    {
+        //        XmlDocument xml = instance;
+        //        var builder = new StringBuilder();
+        //        var settings = new XmlWriterSettings
+        //        {
+        //            OmitXmlDeclaration = true,
+        //            Indent = true,
+        //            NewLineOnAttributes = true
+        //        };
+
+        //        using (var xmlWriter = XmlWriter.Create(builder, settings))
+        //        {
+        //            xml.WriteContentTo(xmlWriter);
+        //        }
+
+        //        return builder.ToString();
+        //    }
+
+        //    if (instance._formatter is JsonSerializerAdapter)
+        //    {
+        //        JToken json = instance;
+        //        return json.ToString();
+        //    }
+
+        //    if (instance._formatter is not BinarySerializerAdapter)
+        //    {
+        //        throw new InvalidOperationException(
+        //            $"The type {typeof(T).FullName} doesn't allow string explicit conversion"
+        //        );
+        //    }
+
+        //    byte[] bytes = instance;
+        //    var binary = bytes.ToBinaryString();
+        //    return string.Join(@" ", binary);
+        //}
+
         [Pure]
         public static explicit operator string(SerializerConverter<T> instance)
         {
@@ -179,14 +217,14 @@ namespace CrispyWaffle.Serialization
 
             if (instance._formatter is JsonSerializerAdapter)
             {
-                JToken json = instance;
+                JsonElement json = instance;
                 return json.ToString();
             }
 
             if (instance._formatter is not BinarySerializerAdapter)
             {
                 throw new InvalidOperationException(
-                    $"he type {typeof(T).FullName} doesn't allow string explicit conversion"
+                    $"The type {typeof(T).FullName} doesn't allow string explicit conversion"
                 );
             }
 
@@ -194,6 +232,7 @@ namespace CrispyWaffle.Serialization
             var binary = bytes.ToBinaryString();
             return string.Join(@" ", binary);
         }
+
 
         /// <summary>
         /// SerializerExtension casting operator.
@@ -217,7 +256,7 @@ namespace CrispyWaffle.Serialization
         /// <param name="json">The JSON.</param>
         /// <returns>The result of the conversion.</returns>
         [Pure]
-        public static implicit operator SerializerConverter<T>(JObject json)
+        public static implicit operator SerializerConverter<T>(JsonElement json)
         {
             var serializer = new SerializerConverter<T>(
                 default,
